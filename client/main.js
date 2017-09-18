@@ -9,8 +9,7 @@ game = new Phaser.Game(canvas_width, canvas_height, Phaser.CANVAS, 'gameDiv')
 var enemies = []
 
 var gameProperties = {
-  //this is the actual game size to determine the boundary of
-	//the world
+  //this is the actual game size to determine the boundary of the world
   gameWidth: 4000,
   gameHeight: 4000,
   game_element: 'gameDiv',
@@ -86,25 +85,50 @@ var remote_player = function(id, startx, starty, start_angle) {
 //Server will tell us when a new enemy player connects to the server.
 //We create a new enemy in our game.
 function onNewPlayer(data) {
-  console.log(data)
   // enemy object
   var new_enemy = new remote_player(data.id, data.x, data.y, data.angle)
   enemies.push(new_enemy)
 }
 
-//Server tells us there is a new enemy movement. We find the moved enemy
-//and sync the enemy movement with the server
+// Server tells us there is a new enemy movement. We find the moved enemy
+// and sync the enemy movement with the server
 function onEnemyMove(data) {
-  console.log(data.id)
-  console.log(enemies)
   var movePlayer = findPlayerById(data.id)
 
   if (!movePlayer) return
 
-  movePlayer.player.body.x = data.x
-  movePlayer.player.body.y = data.y
-  movePlayer.player.angle = data.angle
+  var newPointer = {
+    x: data.x,
+    y: data.y,
+    worldX: data.x,
+    worldY: data.y,
+  }
+
+  var distance = distanceToPointer(movePlayer.player, newPointer)
+  speed = distance / 0.05
+
+  movePlayer.rotation = moveToPointer(movePlayer.player, speed, newPointer)
 }
+
+// we're receiving the calculated position from the server and changing the player position
+function onInputRecieved(data) {
+  //we're forming a new pointer with the new position
+	var newPointer = {
+    x: data.x,
+    y: data.y,
+    worldX: data.x,
+    worldY: data.y,
+  }
+
+  var distance = distanceToPointer(player, newPointer)
+  // we're receiving player position every 50ms. We're interpolating
+	// between the current position and the new position so that player does jerk.
+  speed = distance / 0.05
+
+  // move to the new position
+  player.rotation = moveToPointer(player, speed, newPointer)
+}
+
 
 function findPlayerById(id) {
   for (var i = 0; i < enemies.length; i++) {
@@ -142,6 +166,7 @@ main.prototype = {
     socket.on('new_enemyPlayer', onNewPlayer)
     socket.on('enemy_move', onEnemyMove)
     socket.on('remove_player', onRemovePlayer)
+    socket.on('input_recieved', onInputRecieved)
   },
   update: function() {
     // emit player input
@@ -152,17 +177,12 @@ main.prototype = {
       // of user's mouse position
       var pointer = game.input.mousePointer
 
-      // distanceToPointer allows us to measure the distance between the
-			// mouse pointer and the player object
-      if (distanceToPointer(player, pointer) <= 50) {
-        // The player can move to mouse pointer at a certain speed.
-				// look at player.js on how this is implemented.
-        moveToPointer(player, 0, pointer, 100)
-      } else {
-        moveToPointer(player, 500, pointer)
-      }
-
-      socket.emit('move_player', {x: player.x, y: player.y, angle: player.angle})
+      socket.emit('input_fired', {
+        pointer_x: pointer.x,
+        pointer_y: pointer.y,
+        pointer_worldX: pointer.worldX,
+        pointer_worldY: pointer.worldY,
+      })
     }
   }
 }
