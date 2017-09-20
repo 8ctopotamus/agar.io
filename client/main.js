@@ -19,7 +19,7 @@ var gameProperties = {
 var main = function(game) {}
 
 function onSocketConnected() {
-  createPlayer()
+  console.log('connected to server')
   gameProperties.in_game = true
   socket.emit('new_player', {x: 0, y: 0, angle: 0})
 }
@@ -38,26 +38,36 @@ function onRemovePlayer(data) {
   enemies.splice(enemies.indexOf(removePlayer), 1)
 }
 
-function createPlayer() {
+function createPlayer(data) {
   // use phaser's graphics to draw a circle
   player = game.add.graphics(0, 0)
-  player.radius = 100
+  player.radius = data.size
   // fill and style
   player.beginFill(0xffd900)
   player.lineStyle(2, 0xffd900, 1)
   player.drawCircle(0, 0, player.radius * 2)
   player.endFill()
   player.anchor.setTo(0.5, 0.5)
+  // set initial size
   player.body_size = player.radius
+  player.type = 'player_body'
   // draw a shape
   game.physics.p2.enableBody(player, true)
   player.body.clearShapes()
   player.body.addCircle(player.body_size, 0, 0)
   player.body.data.shapes[0].sensor = true
+  // enable collision and when it makes a contact with another body, call player_coll
+  player.body.onBeginContact.add(player_coll, this)
+
+  game.camera.follow(player, Phaser.Cammera.FOLLOW_LOCKON, 0.5, 0.5)
+}
+
+function getRndInteger(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 // this is the enemy class
-var remote_player = function(id, startx, starty, start_angle) {
+var remote_player = function(id, startx, starty, startSize, start_angle) {
   this.x = startx
   this.y = starty
 	//this is the unique socket id. We use it as a unique name for enemy
@@ -65,7 +75,7 @@ var remote_player = function(id, startx, starty, start_angle) {
   this.angle = start_angle
 
   this.player = game.add.graphics(this.x, this.y)
-  this.player.radius = 100
+  this.player.radius = startSize
 
   // set a fill and line style
 	this.player.beginFill(0xffd900)
@@ -73,7 +83,10 @@ var remote_player = function(id, startx, starty, start_angle) {
 	this.player.drawCircle(0, 0, this.player.radius * 2)
 	this.player.endFill()
 	this.player.anchor.setTo(0.5,0.5)
+  this.initial_size = startSize
 	this.player.body_size = this.player.radius
+  this.player.type = 'player_body'
+  this.player.id = this.id
 
 	// draw a shape
 	game.physics.p2.enableBody(this.player, true)
@@ -85,14 +98,17 @@ var remote_player = function(id, startx, starty, start_angle) {
 //Server will tell us when a new enemy player connects to the server.
 //We create a new enemy in our game.
 function onNewPlayer(data) {
+  console.log(data)
   // enemy object
-  var new_enemy = new remote_player(data.id, data.x, data.y, data.angle)
+  var new_enemy = new remote_player(data.id, data.x, data.y, data.size, data.angle)
   enemies.push(new_enemy)
 }
 
 // Server tells us there is a new enemy movement. We find the moved enemy
 // and sync the enemy movement with the server
 function onEnemyMove(data) {
+  console.log('moving enemy')
+
   var movePlayer = findPlayerById(data.id)
 
   if (!movePlayer) return
@@ -102,6 +118,17 @@ function onEnemyMove(data) {
     y: data.y,
     worldX: data.x,
     worldY: data.y,
+  }
+
+  console.log(data)
+
+  if (data.size != movePlayer.player.body_size) {
+    movePlayer.player.body_size = data.size
+    var new_scale = movePlayer.player.body_size / movePlayer.initial_size
+    movePlayer.player.scale.set(new_scale)
+    movePlayer.player.body.clearShapes()
+    movePlayer.player.body.addCircle(movePlayer.player.body_size, 0, 0)
+    movePlayer.player.body.data.shapes[0].sensor = true
   }
 
   var distance = distanceToPointer(movePlayer.player, newPointer)
@@ -129,6 +156,22 @@ function onInputRecieved(data) {
   player.rotation = moveToPointer(player, speed, newPointer)
 }
 
+function onGained(data) {
+  // get the new body size from server
+  player.body_size = data.new_size
+  // get new scale
+  var new_scale = data.new_size/player.initial_size
+  // set scale
+  player.scale.set(new_scale)
+  // create new circle body with radius of our player size
+  player.body.clearShapes()
+  player.body.addCircle(player.body_size, 0, 0)
+  player.body.data.shapes[0].sensor = true
+}
+
+function onKilled(data) {
+  player.destroy()
+}
 
 function findPlayerById(id) {
   for (var i = 0; i < enemies.length; i++) {
@@ -140,10 +183,8 @@ function findPlayerById(id) {
 
 main.prototype = {
   preload: function() {
-    // does not let the browser sleep if mouse leaves window
-    // used for development
+    // disableVisibilityChange does not let the browser sleep if mouse leaves window, used for development
     game.stage.disableVisibilityChange = true
-
     game.scale.scaleMode = Phaser.ScaleManager.RESIZE
     game.world.setBounds(0, 0, gameProperties.gameWidth, gameProperties.gameHeight, false, false, false, false)
     game.physics.startSystem(Phaser.Physics.P2JS)
@@ -153,20 +194,21 @@ main.prototype = {
     // turn off gravity
     game.physics.p2.applyGravity = false
     game.physics.p2.enableBody(game.physics.p2.walls, false)
-    // turn on collision detection
-    game.physics.p2.setImpactEvents(true)
     //physics start system
     // game.physics.p2.setImpactEvents(true)
   },
   create: function() {
     game.stage.backgroundColor = 0xE1A193
     console.log('client started')
-
     socket.on('connect', onSocketConnected)
+
+    socket.on('create_player', createPlayer)
     socket.on('new_enemyPlayer', onNewPlayer)
     socket.on('enemy_move', onEnemyMove)
     socket.on('remove_player', onRemovePlayer)
     socket.on('input_recieved', onInputRecieved)
+    socket.on('killed', onKilled)
+    socket.on('gained', onGained)
   },
   update: function() {
     // emit player input
