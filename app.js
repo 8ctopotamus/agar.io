@@ -5,7 +5,7 @@ var serv = require('http').Server(app)
 var physicsPlayer = require('./server/physics/playermovement.js')
 
 app.get('/', function(req, res) {
-  res.sendFile(__dirname + '/index.html')
+  res.sendFile(__dirname + '/client/index.html')
 })
 
 app.use('/client', express.static(__dirname + '/client'))
@@ -47,8 +47,9 @@ function physics_handler() {
 }
 
 function onNewPlayer(data) {
+  console.log('onNewPlayer', data)
+
   var newPlayer = new Player(data.x, data.y, data.angle)
-  console.log(newPlayer)
 
   playerBody = new p2.Body({
     mass: 0,
@@ -60,7 +61,7 @@ function onNewPlayer(data) {
   world.addBody(newPlayer.playerBody)
 
   // this.id refers to 'socket' in 'sockets.on'
-  console.log('Created new player with id ' + this.id)
+  console.info('=> Created new player with id ' + this.id)
   newPlayer.id = this.id
 
   this.emit('create_player', {size: newPlayer.size})
@@ -83,7 +84,7 @@ function onNewPlayer(data) {
       angle: existingPlayer.angle,
       size: existingPlayer.size
     }
-    console.log('pushing player')
+    console.log('- pushing player')
     //send message to the sender-client only
     this.emit('new_enemyPlayer', player_info)
   }
@@ -167,7 +168,7 @@ function onPlayerCollision(data) {
     this.emit('killed')
     // provide the new size the enemy will become
     this.broadcast.emit('remove_player', {id: this.id})
-    thisd.broadcast.to(data.id).emit('gained', {new_size: enemyPlayer.size})
+    this.broadcast.to(data.id).emit('gained', {new_size: enemyPlayer.size})
     playerKilled(movePlayer)
   } else {
     var gained_size = enemyPlayer.size / 2

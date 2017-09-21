@@ -20,6 +20,7 @@ var main = function(game) {}
 
 function onSocketConnected() {
   console.log('connected to server')
+
   gameProperties.in_game = true
   socket.emit('new_player', {x: 0, y: 0, angle: 0})
 }
@@ -39,6 +40,7 @@ function onRemovePlayer(data) {
 }
 
 function createPlayer(data) {
+  console.log('creating player...')
   // use phaser's graphics to draw a circle
   player = game.add.graphics(0, 0)
   player.radius = data.size
@@ -48,8 +50,9 @@ function createPlayer(data) {
   player.drawCircle(0, 0, player.radius * 2)
   player.endFill()
   player.anchor.setTo(0.5, 0.5)
-  // set initial size
   player.body_size = player.radius
+  // set initial size
+  player.initial_size = player.radius
   player.type = 'player_body'
   // draw a shape
   game.physics.p2.enableBody(player, true)
@@ -59,7 +62,12 @@ function createPlayer(data) {
   // enable collision and when it makes a contact with another body, call player_coll
   player.body.onBeginContact.add(player_coll, this)
 
-  game.camera.follow(player, Phaser.Cammera.FOLLOW_LOCKON, 0.5, 0.5)
+  console.log('New player: ', player)
+
+//  ypeError: Cannot read property 'FOLLOW_LOCKON' of undefined
+  //    at r.createPlayer (main.js:64)
+
+  game.camera.follow(player, Phaser.Camera.FOLLOW_LOCKON, 0.5, 0.5)
 }
 
 function getRndInteger(min, max) {
@@ -98,7 +106,8 @@ var remote_player = function(id, startx, starty, startSize, start_angle) {
 //Server will tell us when a new enemy player connects to the server.
 //We create a new enemy in our game.
 function onNewPlayer(data) {
-  console.log(data)
+  console.log('New player connected: ', data)
+
   // enemy object
   var new_enemy = new remote_player(data.id, data.x, data.y, data.size, data.angle)
   enemies.push(new_enemy)
